@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.0.2.2</domain>
+        <trust-anchors>
+            <certificates src="@raw/cert"/>
+        </trust-anchors>
+    </domain-config>
+<!--    <domain-config cleartextTrafficPermitted="false">-->
+<!--        <domain includeSubdomains="true">securebiometrics</domain>-->
+<!--        <pin-set expiration="2024-12-31">-->
+<!--            <pin digest="SHA-256">wsvynNv6lywUYCOLMrtGZDX5zc0bob8DTlwgNAypJpE=</pin>-->
+<!--        </pin-set>-->
+<!--    </domain-config>-->
+</network-security-config>

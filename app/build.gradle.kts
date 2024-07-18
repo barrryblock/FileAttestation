@@ -63,6 +63,7 @@ dependencies {
     implementation ("androidx.constraintlayout:constraintlayout:2.0.4")
     implementation ("com.android.volley:volley:1.2.0")
     implementation ("androidx.security:security-crypto:1.1.0-alpha03")
+    implementation ("com.google.android.play:integrity:1.3.0")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

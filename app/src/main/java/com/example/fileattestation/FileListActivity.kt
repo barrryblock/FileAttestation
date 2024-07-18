@@ -48,9 +48,11 @@ class FileListActivity : AppCompatActivity() {
     }
 
     private fun fetchFileList() {
-        val url = "https://10.0.2.2:5000/api/files"
+        val url = "https://fileveri-flask.azurewebsites.net/api/files"
+        val deviceId = "wenXku4fBwXU"
+        val deviceToken = "eQGFH02opt4DQPiu"
 
-        val jsonArrayRequest = JsonArrayRequest(
+        val jsonArrayRequest = object : JsonArrayRequest(
             Request.Method.GET, url, null,
             { response ->
                 try {
@@ -58,7 +60,7 @@ class FileListActivity : AppCompatActivity() {
                     for (i in 0 until response.length()) {
                         val fileObject = response.getJSONObject(i)
                         val fileName = fileObject.getString("name")
-                        val fileDate = fileObject.getString("date")
+                        val fileDate = fileObject.getString("last_modified")
                         val fileSize = fileObject.getString("size")
                         fileList.add("$fileName - $fileSize - $fileDate")
                     }
@@ -73,8 +75,16 @@ class FileListActivity : AppCompatActivity() {
                 error.printStackTrace()
                 Toast.makeText(this, "Failed to fetch file list.", Toast.LENGTH_SHORT).show()
             }
-        )
+        ) {
+            override fun getHeaders(): Map<String, String> {
+                val headers = HashMap<String, String>()
+                headers["deviceid"] = deviceId
+                headers["deviceToken"] = deviceToken
+                return headers
+            }
+        }
 
+        // Assuming 'queue' is your RequestQueue instance
         queue.add(jsonArrayRequest)
     }
 }

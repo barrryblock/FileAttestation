@@ -64,6 +64,7 @@ dependencies {
     implementation ("com.android.volley:volley:1.2.0")
     implementation ("androidx.security:security-crypto:1.1.0-alpha03")
     implementation ("com.google.android.play:integrity:1.3.0")
+    implementation ("com.squareup.okhttp3:okhttp:4.9.3")
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")

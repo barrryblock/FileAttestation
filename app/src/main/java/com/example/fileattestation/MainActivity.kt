@@ -15,6 +15,7 @@ import com.android.volley.toolbox.JsonObjectRequest
 import com.android.volley.toolbox.Volley
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
+import java.io.IOException
 import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.Signature
@@ -29,6 +30,8 @@ import com.google.android.play.core.integrity.IntegrityTokenRequest
 import com.google.android.play.core.integrity.IntegrityTokenResponse
 import com.google.android.gms.tasks.OnCompleteListener
 import com.google.android.gms.tasks.Task
+import okhttp3.*
+import okhttp3.MediaType.Companion.toMediaType
 
 
 class MainActivity : AppCompatActivity() {
@@ -78,7 +81,7 @@ class MainActivity : AppCompatActivity() {
                     val integrityToken = tokenResponse.token()
 
                     // Send the integrity token to your server for verification
-                    sendTokenToServer(integrityToken)
+//                    sendTokenToServer(integrityToken)
                 } else {
                     task.exception?.printStackTrace()
                     // Handle failure case
@@ -88,11 +91,34 @@ class MainActivity : AppCompatActivity() {
 
 
 
-    private fun sendTokenToServer(integrityToken: String) {
-        // Implement server communication to send the token for verification
-        // Example: send a POST request with the token
-        println("Integrity Token: $integrityToken")
-    }
+//    private fun sendTokenToServer(integrityToken: String) {
+//        val client = OkHttpClient()
+//        val json = """
+//        {
+//            "token": "$integrityToken"
+//        }
+//    """.trimIndent()
+//        val body = RequestBody.create("application/json; charset=utf-8".toMediaType(), json)
+//        val request = Request.Builder()
+//            .url("https://fileveri-flask.azurewebsites.net/verify")
+//            .post(body)
+//            .build()
+//
+//        client.newCall(request).enqueue(object : Callback {
+//            override fun onFailure(call: Call, e: IOException) {
+//                e.printStackTrace()
+//            }
+//
+//            override fun onResponse(call: Call, response: Response) {
+//                response.use {
+//                    if (!response.isSuccessful) throw IOException("Unexpected code $response")
+//
+//                    val responseData = response.body()?.string()
+//                    println(responseData)
+//                }
+//            }
+//        })
+//    }
     private fun showFileChooser() {
         val intent = Intent(Intent.ACTION_GET_CONTENT)
         intent.type = "*/*"
@@ -125,6 +151,7 @@ class MainActivity : AppCompatActivity() {
             }
         }
     }
+
 
     private fun readFileContent(uri: Uri): ByteArray {
         val inputStream: InputStream? = contentResolver.openInputStream(uri)

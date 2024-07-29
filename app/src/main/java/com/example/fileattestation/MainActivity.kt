@@ -5,31 +5,36 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.security.keystore.KeyGenParameterSpec
+import android.security.keystore.KeyProperties
 import android.util.Base64
 import android.widget.Button
 import android.widget.Toast
-import androidx.appcompat.app.AppCompatActivity
-import com.android.volley.Request
-import com.android.volley.RequestQueue
-import com.android.volley.toolbox.JsonObjectRequest
-import com.android.volley.toolbox.Volley
-import java.io.ByteArrayOutputStream
-import java.security.KeyStore
-import java.security.PrivateKey
-import java.security.Signature
-import java.security.PublicKey
-import android.security.keystore.KeyGenParameterSpec
-import android.security.keystore.KeyProperties
 import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import org.json.JSONObject
+import androidx.appcompat.app.AppCompatActivity
+import com.android.volley.DefaultRetryPolicy
+import com.android.volley.RequestQueue
+import com.android.volley.RetryPolicy
+import com.android.volley.toolbox.JsonObjectRequest
+import com.android.volley.toolbox.StringRequest
+import com.android.volley.toolbox.Volley
 import org.json.JSONException
+import org.json.JSONObject
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
+import java.io.OutputStreamWriter
 import java.math.BigInteger
 import java.security.KeyPair
 import java.security.KeyPairGenerator
+import java.security.KeyStore
+import java.security.PrivateKey
+import java.security.PublicKey
 import java.security.SecureRandom
+import java.security.Signature
 import java.util.Calendar
 import java.util.GregorianCalendar
 import javax.crypto.Cipher
@@ -88,13 +93,15 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         //We are creating the key pair with sign and verify purposes
         val parameterSpec: KeyGenParameterSpec = KeyGenParameterSpec.Builder(KEY_ALIAS,
             KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY).run {
-            setCertificateSerialNumber(BigInteger.valueOf(777))       //Serial number used for the self-signed certificate of the generated key pair, default is 1
-            setCertificateSubject(X500Principal("CN=$KEY_ALIAS"))     //Subject used for the self-signed certificate of the generated key pair, default is CN=fake
-            setDigests(KeyProperties.DIGEST_SHA256)                         //Set of digests algorithms with which the key can be used
+            //setCertificateSerialNumber(BigInteger.valueOf(777))       //Serial number used for the self-signed certificate of the generated key pair, default is 1
+            //setCertificateSubject(X500Principal("CN=$KEY_ALIAS"))     //Subject used for the self-signed certificate of the generated key pair, default is CN=fake
+            setDigests(KeyProperties.DIGEST_SHA256, KeyProperties.DIGEST_SHA512)                         //Set of digests algorithms with which the key can be used
             setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1) //Set of padding schemes with which the key can be used when signing/verifying
             setCertificateNotBefore(startDate.time)                         //Start of the validity period for the self-signed certificate of the generated, default Jan 1 1970
             setCertificateNotAfter(endDate.time)                            //End of the validity period for the self-signed certificate of the generated key, default Jan 1 2048
-            setUserAuthenticationRequired(true)                             //Sets whether this key is authorized to be used only if the user has been authenticated, default false
+            setUserAuthenticationRequired(false)                             //Sets whether this key is authorized to be used only if the user has been authenticated, default false
+            setKeySize(2048)
+            setIsStrongBoxBacked(true)
             build()
         }
 
@@ -126,7 +133,8 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         buttonUpload.setOnClickListener {
             if (fileContent != null && signedData != null) {
                 //sendSignedDataToServer(fileContent!!, keyPair.public , signedData!!)
-                sendSignedDataToServer(this, fileContent!!, keyPair.public)
+                println(formatBase64String(keyPair.public.encoded.toString()))
+                sendSignedDataToServer(this, fileContent!!, keyPair.public,challengeString)
             } else {
                 Toast.makeText(this, "No file selected", Toast.LENGTH_SHORT).show()
             }
@@ -223,33 +231,73 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
     }
     private fun sendSignedDataToServer(context: Context,
                                        fileContent: ByteArray,
-                                       publicKey: PublicKey
+                                       publicKey: PublicKey,
+                                       challengeString: String?
                                        ) {
         val secretKey = generateSecretKey()
 
         // Prepare data to be sent
-        val params = HashMap<String, String>()
-        params["encrypted_file_content"] = Base64.encodeToString(encryptFileContent(fileContent, secretKey), Base64.DEFAULT)
-        params["signed_encrypted_content"] = Base64.encodeToString(signData(encryptFileContent(fileContent, secretKey)), Base64.DEFAULT)
-        params["signed_challenge"] = Base64.encodeToString(challengeString?.let { signData(it.toByteArray(Charsets.UTF_8)) }, Base64.DEFAULT)
-        params["public_key"] = Base64.encodeToString(publicKey.encoded, Base64.DEFAULT)
-        params["challenge"] = Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT)
-        val jsonRequest = JSONObject(params as Map<*, *>)
+        //val params = HashMap<String, String>()
+//        params["encrypted_file_content"] = Base64.encodeToString(encryptFileContent(fileContent, secretKey), Base64.DEFAULT)
+//        params["signed_encrypted_content"] = Base64.encodeToString(signData(encryptFileContent(fileContent, secretKey)), Base64.DEFAULT)
+//        params["signed_challenge"] = Base64.encodeToString(challengeString?.let { signData(it.toByteArray(Charsets.UTF_8)) }, Base64.DEFAULT)
+//        params["public_key"] = Base64.encodeToString(publicKey.encoded, Base64.DEFAULT)
+//        params["challenge"] = Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT)
+//        val fileParams = HashMap<String, ByteArray>()
+//        fileParams["encrypted_file_content"] = encryptFileContent(fileContent, secretKey)
+
+        //println(Base64.encodeToString(publicKey.encoded, Base64.DEFAULT))
 
         // Send request using Volley
-        val queue: RequestQueue = Volley.newRequestQueue(context)
-        val url = "http://10.0.2.2:5000/upload"
+        //val queue: RequestQueue = Volley.newRequestQueue(context)
+        val url = "https://fileveri-flask.azurewebsites.net/upload"
+        val deviceId = "wenXku4fBwXU"
+        val deviceToken = "eQGFH02opt4DQPiu"
+        val encodedPublicKey = Base64.encodeToString(publicKey.encoded, Base64.DEFAULT).replace("\n", "")
+        val publicKeyString = "-----BEGIN PUBLIC KEY-----\n${formatBase64String(encodedPublicKey)}-----END PUBLIC KEY-----"
 
-        val jsonObjectRequest = JsonObjectRequest(
-            Request.Method.POST, url, jsonRequest,
+
+
+        val jsonObjectRequest = object : StringRequest(
+            Method.POST, url,
             { response ->
-                // Handle response
                 Toast.makeText(context, response.toString(), Toast.LENGTH_SHORT).show()
             },
             { error ->
                 // Handle error
-                Toast.makeText(context, error.toString(), Toast.LENGTH_SHORT).show()
-            })
+                val responseBody = error.networkResponse?.data?.let { String(it, Charsets.UTF_8) }
+                Toast.makeText(context, "Error: $responseBody", Toast.LENGTH_SHORT).show()
+                println("UploadError: ${error.toString()}")
+                println("UploadError: $responseBody")
+            }){
+            override fun getHeaders(): Map<String, String> {
+                val headers = HashMap<String, String>()
+                headers["deviceid"] = deviceId
+                headers["deviceToken"] = deviceToken
+                return headers
+            }
+            override fun getParams(): Map<String, String> {
+                val params = HashMap<String, String>()
+                //params["encrypted_file_content"] = Base64.encodeToString(fileContent, Base64.DEFAULT)
+                //params["signed_encrypted_content"] = Base64.encodeToString(signData(encryptFileContent(fileContent, secretKey)), Base64.DEFAULT)
+                params["signed_challenge"] = Base64.encodeToString(challengeString?.let { signData(it.toByteArray(Charsets.UTF_8)) }, Base64.DEFAULT)
+                //params["public_key"] = "-----BEGIN PUBLIC KEY-----\n"+Base64.encodeToString(publicKey.encoded, Base64.DEFAULT).replace("\n", "")+"\n-----END PUBLIC KEY-----"
+                //params["public_key"] = "-----BEGIN PUBLIC KEY-----\n${formatBase64String(publicKey.encoded.toString())}\n-----END PUBLIC KEY-----"
+                params["public_key"] = publicKeyString
+                params["challenge"] = Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT)
+                //println(params["public_key"])
+                return params
+
+            }
+            override fun getRetryPolicy(): RetryPolicy {
+                return DefaultRetryPolicy(
+                    120000, // 2 minutes timeout
+                    DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
+                    DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
+                )
+            }
+        }
+
 
         queue.add(jsonObjectRequest)
     }
@@ -260,6 +308,30 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
     override fun onFailure(errorMessage: String) {
         // Handle the error here
         Toast.makeText(this, errorMessage, Toast.LENGTH_SHORT).show()
+    }
+    private fun formatBase64String(encoded: String): String {
+        val sb = StringBuilder()
+        var i = 0
+        while (i < encoded.length) {
+            sb.append(encoded, i, (i + 64).coerceAtMost(encoded.length)).append("\n")
+            i += 64
+        }
+        return sb.toString()
+    }
+    private fun writeParamsToFile(context: Context, params: Map<String, String>) {
+        val fileName = "request_params.txt"
+        val file = File(context.filesDir, fileName)
+        println(file.absolutePath)
+
+        FileOutputStream(file).use { fos ->
+            OutputStreamWriter(fos).use { writer ->
+                writer.write("Params:\n")
+                for ((key, value) in params) {
+                    writer.write("$key: $value\n")
+                }
+
+            }
+        }
     }
 }
 

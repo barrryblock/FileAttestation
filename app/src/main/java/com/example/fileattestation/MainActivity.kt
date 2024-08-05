@@ -21,13 +21,11 @@ import com.android.volley.toolbox.JsonObjectRequest
 import com.android.volley.toolbox.StringRequest
 import com.android.volley.toolbox.Volley
 import org.json.JSONException
-import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.OutputStreamWriter
-import java.math.BigInteger
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
@@ -41,7 +39,6 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
-import javax.security.auth.x500.X500Principal
 
 interface ChallengeCallback {
     fun onSuccess(challenge: String)
@@ -53,9 +50,7 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
     private lateinit var buttonUpload: Button
     private lateinit var buttonViewFiles: Button
     private lateinit var queue: RequestQueue
-    private lateinit var keyPair: KeyPair
     private var challengeString: String? = null
-    //private val API_KEY = "-----BEGIN PRIVATE KEY-----\\nMIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQDixqf01yxtEpg/\\nMIF+ebSvwH1w/E+SP5h3iUCXtoviPwBtE19CNUb9HVN3ibH4pezGxjb9k2tSqhCp\\nz6UgE/9BtDcGvpfgqkQAJWEjlKHtS66HrO01ufkLBCltYU6AkQhEWdOt0Q1QNPNS\\n7H9jMnB1WpFGadzLuKvKsAk2WO45shCdImMdFU1Z4uX+VBwsVuyjcsmkdvFXatWA\\nXPsIrcXaq9fyvkeJhknPpAZ3TfAwr+seurxD1Dn4ZRUIcB5jcAtUwf8Q9/rKnd8t\\nWBo320xUkBHjr7NP8vr+CGJT+G37/eQKI6ukxTWG3BLizert4LrWCFgy5VEgqPsy\\n4oRVsdlxAgMBAAECggEAS+uO6iipTmDFyI3gJGvxYk9yj4NgzkjtLcOs9L2f6iAG\\nb/3my78TY4TQXzohc2l1MfzFBzK14OhfiMIj+W/IaoI/U8o2BXhrKJNbCHLnnQ5T\\nwUdS6MQ4jIgZqG1Fv0QOvPdHpy7QIrR/a5kScq69uIQYE7c4PJm4JbS2eNPf+T8y\\n/Dp3muc0v42Vx7zm2DVqKgierPB5iGwpwlSw5Ah+Nk7McQEg7j2w+NsjAD6lZ2XD\\nZMj1NQEvn0i8wKvKuUeC5RBM27XyrCzE442wtz9a7V0NqbPAnLa0q3mGnap6t3Yt\\nGdYYUasF4bo1UVYRhUfdJ1cLuzZ2GiTgCPCCS0bvCwKBgQDynM6ttnL0zy4MoT9C\\nV7odU0lLAGUtu3fIboVK4uSHEowfQvO2DohjqwmJRbrDWD95aD/6scXtL3TxmXlI\\nPMe1Bhr2MyEN6Aqh4kiDUFSyh9viSte9cmTV8cZ24J4racOeLvlxMFuJQkI/YUSm\\nL2vuYS8ibi9gJdAV6SQbVGb3uwKBgQDvSiOIoHTtPZhYpqhAMp4xpqWxATlsdnJJ\\noFNvebz3vPOmFx8e4TCPAaOn5k2t52DITkNtTKaGI5B9fk0ZQ5jbjFUpaIPZ4eYr\\nHd1BurPgSHE/K7Vs791FptrrjCtMTA7ZmF0jtf0DzDvLPR9oO9RTHo5ZCxheRCa2\\nd4Q7MAgSwwKBgQCFTHKiLyRqLYr3lYDUSq8Pfbs/YjA1OFNP5KmHw7IcJKyoYHjX\\nBpUZbdgHfDBpNAtsAUNl0lcVQoXWWKSyc/KmG3yk2OLIaT2uRE3jGDfw/4RoiQaQ\\nKFIO2pBYsIE3CR1ZxCV5c0BX4ffUKvU0+ckraGolWLTe9uelojscaPtKEQKBgQDN\\n4JnF+VfgrjgfPfRQl7xnt5ujOQxw90/JbPmcVb9x3s46vnX2GYWv5Jcr5Ag9cW9h\\np4R3y5USoBK3Bi3LaM9hRdIXuGaI1cU0n5M39CzC8VEOKssDmTRlsvNz6btu/5lf\\nOaoZCYFQ/S0M5d/ZzHAXu5h5oAQtRrGQGDBaxC6OBQKBgEg8rxsYALCoZe653AuM\\ndQbUyVLhGu1KLTU6y/QG9DyMoSJGvTPNIiXS3Kj0QzVCYxYYksqBDRCEwfMMemQN\\nkE6FLS11RdBI3v+fOSbFV82tdu5sbbfHj1jY20/D7OGf2g+srnH/MGtff2EcjWjh\\n5yXvushu5fWoMXWIBAB+Axiv\\n-----END PRIVATE KEY-----\\n"
     private lateinit var filePickerLauncher: ActivityResultLauncher<Intent>
     private var fileContent: ByteArray? = null
     private var signedData: ByteArray? = null
@@ -101,7 +96,7 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
             setCertificateNotAfter(endDate.time)                            //End of the validity period for the self-signed certificate of the generated key, default Jan 1 2048
             setUserAuthenticationRequired(false)                             //Sets whether this key is authorized to be used only if the user has been authenticated, default false
             setKeySize(2048)
-            setIsStrongBoxBacked(true)
+            setIsStrongBoxBacked(false)
             build()
         }
 
@@ -111,10 +106,31 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         //Generates the key pair
         return keyPairGenerator.genKeyPair()
     }
+    private fun keysExist(): Boolean {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore")
+        keyStore.load(null)
+        return keyStore.containsAlias(KEY_ALIAS)
+    }
+    private fun getPublicKey(): PublicKey {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore")
+        keyStore.load(null)
+        return keyStore.getCertificate(KEY_ALIAS).publicKey
+    }
+
+    private fun getPrivateKey(): PrivateKey {
+        val keyStore = KeyStore.getInstance("AndroidKeyStore")
+        keyStore.load(null)
+        return keyStore.getKey(KEY_ALIAS, null) as PrivateKey
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        val keyPair = generateKeyPair()
+        if (!keysExist()) {
+            val keyPair = generateKeyPair()
+            // Send public key to server during device registration
+            //sendPublicKeyToServer(keyPair.public)
+        }
+
         getChallenge(this, this)
         buttonUpload = findViewById(R.id.buttonUpload)
         buttonViewFiles = findViewById(R.id.buttonViewFiles)
@@ -133,8 +149,8 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         buttonUpload.setOnClickListener {
             if (fileContent != null && signedData != null) {
                 //sendSignedDataToServer(fileContent!!, keyPair.public , signedData!!)
-                println(formatBase64String(keyPair.public.encoded.toString()))
-                sendSignedDataToServer(this, fileContent!!, keyPair.public,challengeString)
+                println(formatBase64String(getPublicKey().toString()))
+                sendSignedDataToServer(this, fileContent!!, getPublicKey(),challengeString)
             } else {
                 Toast.makeText(this, "No file selected", Toast.LENGTH_SHORT).show()
             }
@@ -286,6 +302,7 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
                 params["public_key"] = publicKeyString
                 params["challenge"] = Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT)
                 //println(params["public_key"])
+                writeParamsToFile(context,params)
                 return params
 
             }

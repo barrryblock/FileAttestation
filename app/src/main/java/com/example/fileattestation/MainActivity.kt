@@ -5,9 +5,11 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import android.webkit.MimeTypeMap
 import android.widget.Button
 import android.widget.Toast
 import androidx.activity.result.ActivityResult
@@ -20,7 +22,16 @@ import com.android.volley.RetryPolicy
 import com.android.volley.toolbox.JsonObjectRequest
 import com.android.volley.toolbox.StringRequest
 import com.android.volley.toolbox.Volley
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
+import okhttp3.Response
 import org.json.JSONException
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -40,10 +51,13 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
+
 interface ChallengeCallback {
     fun onSuccess(challenge: String)
     fun onFailure(errorMessage: String)
 }
+
+
 
 class MainActivity : AppCompatActivity(), ChallengeCallback {
 
@@ -54,9 +68,13 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
     private lateinit var filePickerLauncher: ActivityResultLauncher<Intent>
     private var fileContent: ByteArray? = null
     private var signedData: ByteArray? = null
+    private var fileName: String? = null
+    private var fileExtension: String? = null
     companion object {
         //const val FILE_SELECT_CODE = 0
-        const val KEY_ALIAS = "com.android.security.publickeycryptography.key"
+        const val KEY_ALIAS = "com.android.security.deviceattestation.key"
+        const val DEVICE_ID = "2sjYuOGkiQ9H"
+        const val DEVICE_TOKEN = "Z7SvEGdnCcf9BobK"
     }
     private fun showFileChooser() {
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
@@ -122,19 +140,51 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         keyStore.load(null)
         return keyStore.getKey(KEY_ALIAS, null) as PrivateKey
     }
+    private fun sendPublicKeyToServer(publicKey: PublicKey) {
+        val url = "https://deviceattestation.azurewebsites.net/attest-device"
+        val deviceId = DEVICE_ID
+        val deviceToken = DEVICE_TOKEN
+        val encodedPublicKey = Base64.encodeToString(publicKey.encoded, Base64.DEFAULT).replace("\n", "")
+        val publicKeyString = "-----BEGIN PUBLIC KEY-----\n${formatBase64String(encodedPublicKey)}-----END PUBLIC KEY-----"
+        println(publicKeyString)
+
+        val jsonObject = JSONObject()
+        jsonObject.put("public_key", publicKeyString)
+
+        val jsonObjectRequest = object : JsonObjectRequest(
+            Method.POST, url, jsonObject,
+            { response ->
+                Toast.makeText(this, "Public key sent to server", Toast.LENGTH_SHORT).show()
+            },
+            { error ->
+                error.printStackTrace()
+                Toast.makeText(this, "Failed to send public key to server", Toast.LENGTH_SHORT).show()
+            }
+        ) {
+            override fun getHeaders(): Map<String, String> {
+                val headers = HashMap<String, String>()
+                headers["deviceid"] = deviceId
+                headers["deviceToken"] = deviceToken
+                return headers
+            }
+        }
+
+        queue.add(jsonObjectRequest)
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        queue = Volley.newRequestQueue(this)
         if (!keysExist()) {
             val keyPair = generateKeyPair()
             // Send public key to server during device registration
-            //sendPublicKeyToServer(keyPair.public)
+            sendPublicKeyToServer(keyPair.public)
         }
 
         getChallenge(this, this)
         buttonUpload = findViewById(R.id.buttonUpload)
         buttonViewFiles = findViewById(R.id.buttonViewFiles)
-        queue = Volley.newRequestQueue(this)
+
 
 
         val selectFileButton: Button = findViewById(R.id.selectFileButton)
@@ -150,7 +200,9 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
             if (fileContent != null && signedData != null) {
                 //sendSignedDataToServer(fileContent!!, keyPair.public , signedData!!)
                 println(formatBase64String(getPublicKey().toString()))
-                sendSignedDataToServer(this, fileContent!!, getPublicKey(),challengeString)
+                //sendSignedDataToServer(this, fileContent!!, getPublicKey(),challengeString)
+                uploadByteArrayToFlaskServer(fileContent!!,"https://deviceattestation.azurewebsites.net/api/upload-file",this)
+
             } else {
                 Toast.makeText(this, "No file selected", Toast.LENGTH_SHORT).show()
             }
@@ -163,6 +215,8 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
                     try {
                         fileContent = readFileContent(uri)
                         signedData = signData(fileContent!!)
+                        fileName = getFileName(uri)
+                        fileExtension = getFileExtension(uri)
                         Toast.makeText(this, "File ready to upload", Toast.LENGTH_SHORT).show()
                         println("File content size: ${fileContent?.size}")
                         println("Signed data size: ${signedData?.size}")
@@ -180,10 +234,33 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         //performDeviceAttestation()
 
     }
+    private fun getFileName(uri: Uri): String {
+        var result: String? = null
+        if (uri.scheme == "content") {
+            contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    result = cursor.getString(cursor.getColumnIndexOrThrow(OpenableColumns.DISPLAY_NAME))
+                }
+            }
+        }
+        if (result == null) {
+            result = uri.path
+            val cut = result?.lastIndexOf('/') ?: -1
+            if (cut != -1) {
+                result = result?.substring(cut + 1)
+            }
+        }
+        return result ?: "unknown"
+    }
+
+    private fun getFileExtension(uri: Uri): String {
+        return contentResolver.getType(uri)?.let { MimeTypeMap.getSingleton().getExtensionFromMimeType(it) } ?: "unknown"
+    }
+
     private fun getChallenge(context: Context, callback:ChallengeCallback) {
-        val url = "https://fileveri-flask.azurewebsites.net/api/challenge"
-        val deviceId = "wenXku4fBwXU"
-        val deviceToken = "eQGFH02opt4DQPiu"
+        val url = "https://deviceattestation.azurewebsites.net/api/challenge"
+        val deviceId = DEVICE_ID
+        val deviceToken = DEVICE_TOKEN
 
         val jsonObjectRequest = object : JsonObjectRequest(
             Method.GET, url, null,
@@ -245,78 +322,105 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         keyGenerator.init(256) // AES-256
         return keyGenerator.generateKey()
     }
-    private fun sendSignedDataToServer(context: Context,
-                                       fileContent: ByteArray,
-                                       publicKey: PublicKey,
-                                       challengeString: String?
-                                       ) {
-        val secretKey = generateSecretKey()
+//    private fun sendSignedDataToServer(context: Context,fileContent: ByteArray,publicKey: PublicKey,challengeString: String?) {
+//        val url = "https://deviceattestation.azurewebsites.net/upload"
+//        val deviceId = DEVICE_ID
+//        val deviceToken = DEVICE_TOKEN
+//        val encodedPublicKey = Base64.encodeToString(publicKey.encoded, Base64.DEFAULT).replace("\n", "")
+//        val publicKeyString = "-----BEGIN PUBLIC KEY-----\n${formatBase64String(encodedPublicKey)}-----END PUBLIC KEY-----"
+//        val jsonObjectRequest = object : StringRequest(
+//            Method.POST, url,
+//            { response ->
+//
+//                uploadByteArrayToFlaskServer(fileContent,"https://deviceattestation.azurewebsites.net/upload-files",this)
+//                Toast.makeText(context, response.toString(), Toast.LENGTH_SHORT).show()
+//            },
+//            { error ->
+//                // Handle error
+//                val responseBody = error.networkResponse?.data?.let { String(it, Charsets.UTF_8) }
+//                Toast.makeText(context, "Error: $responseBody", Toast.LENGTH_SHORT).show()
+//                println("UploadError: ${error.toString()}")
+//                println("UploadError: $responseBody")
+//            }){
+//            override fun getHeaders(): Map<String, String> {
+//                val headers = HashMap<String, String>()
+//                headers["deviceid"] = deviceId
+//                headers["deviceToken"] = deviceToken
+//                return headers
+//            }
+//            override fun getParams(): Map<String, String> {
+//                val params = HashMap<String, String>()
+//                params["signed_challenge"] = Base64.encodeToString(challengeString?.let { signData(it.toByteArray(Charsets.UTF_8)) }, Base64.DEFAULT)
+//                params["public_key"] = publicKeyString
+//                params["challenge"] = Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT)
+//                writeParamsToFile(context,params)
+//                return params
+//            }
+//            override fun getRetryPolicy(): RetryPolicy {
+//                return DefaultRetryPolicy(
+//                    120000, // 2 minutes timeout
+//                    DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
+//                    DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
+//                )
+//            }
+//        }
+//
+//        queue.add(jsonObjectRequest)
+//    }
 
-        // Prepare data to be sent
-        //val params = HashMap<String, String>()
-//        params["encrypted_file_content"] = Base64.encodeToString(encryptFileContent(fileContent, secretKey), Base64.DEFAULT)
-//        params["signed_encrypted_content"] = Base64.encodeToString(signData(encryptFileContent(fileContent, secretKey)), Base64.DEFAULT)
-//        params["signed_challenge"] = Base64.encodeToString(challengeString?.let { signData(it.toByteArray(Charsets.UTF_8)) }, Base64.DEFAULT)
-//        params["public_key"] = Base64.encodeToString(publicKey.encoded, Base64.DEFAULT)
-//        params["challenge"] = Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT)
-//        val fileParams = HashMap<String, ByteArray>()
-//        fileParams["encrypted_file_content"] = encryptFileContent(fileContent, secretKey)
-
-        //println(Base64.encodeToString(publicKey.encoded, Base64.DEFAULT))
-
-        // Send request using Volley
-        //val queue: RequestQueue = Volley.newRequestQueue(context)
-        val url = "https://fileveri-flask.azurewebsites.net/upload"
-        val deviceId = "wenXku4fBwXU"
-        val deviceToken = "eQGFH02opt4DQPiu"
-        val encodedPublicKey = Base64.encodeToString(publicKey.encoded, Base64.DEFAULT).replace("\n", "")
-        val publicKeyString = "-----BEGIN PUBLIC KEY-----\n${formatBase64String(encodedPublicKey)}-----END PUBLIC KEY-----"
-
-
-
-        val jsonObjectRequest = object : StringRequest(
-            Method.POST, url,
-            { response ->
-                Toast.makeText(context, response.toString(), Toast.LENGTH_SHORT).show()
-            },
-            { error ->
-                // Handle error
-                val responseBody = error.networkResponse?.data?.let { String(it, Charsets.UTF_8) }
-                Toast.makeText(context, "Error: $responseBody", Toast.LENGTH_SHORT).show()
-                println("UploadError: ${error.toString()}")
-                println("UploadError: $responseBody")
-            }){
-            override fun getHeaders(): Map<String, String> {
-                val headers = HashMap<String, String>()
-                headers["deviceid"] = deviceId
-                headers["deviceToken"] = deviceToken
-                return headers
-            }
-            override fun getParams(): Map<String, String> {
-                val params = HashMap<String, String>()
-                //params["encrypted_file_content"] = Base64.encodeToString(fileContent, Base64.DEFAULT)
-                //params["signed_encrypted_content"] = Base64.encodeToString(signData(encryptFileContent(fileContent, secretKey)), Base64.DEFAULT)
-                params["signed_challenge"] = Base64.encodeToString(challengeString?.let { signData(it.toByteArray(Charsets.UTF_8)) }, Base64.DEFAULT)
-                //params["public_key"] = "-----BEGIN PUBLIC KEY-----\n"+Base64.encodeToString(publicKey.encoded, Base64.DEFAULT).replace("\n", "")+"\n-----END PUBLIC KEY-----"
-                //params["public_key"] = "-----BEGIN PUBLIC KEY-----\n${formatBase64String(publicKey.encoded.toString())}\n-----END PUBLIC KEY-----"
-                params["public_key"] = publicKeyString
-                params["challenge"] = Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT)
-                //println(params["public_key"])
-                writeParamsToFile(context,params)
-                return params
-
-            }
-            override fun getRetryPolicy(): RetryPolicy {
-                return DefaultRetryPolicy(
-                    120000, // 2 minutes timeout
-                    DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
-                    DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
-                )
-            }
+    private fun uploadByteArrayToFlaskServer(fileContent: ByteArray, serverUrl: String, context: Context) {
+        // Create OkHttpClient instance
+        val client = OkHttpClient()
+        val deviceId = DEVICE_ID
+        val deviceToken = DEVICE_TOKEN
+        //println(Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT))
+        //println(Base64.encodeToString(challengeString?.let { signData(it.toByteArray(Charsets.UTF_8)) }, Base64.DEFAULT))
+        // Create a temporary file from the ByteArray
+        val tempFile = File(context.cacheDir, "tempFile")
+        tempFile.createNewFile()
+        FileOutputStream(tempFile).use { fos ->
+            fos.write(fileContent)
         }
 
+        // Create a MultipartBody.Part instance for the file
+        val fileBody = tempFile.asRequestBody("multipart/form-data".toMediaTypeOrNull())
+        val multipartBody = MultipartBody.Builder()
+            .setType(MultipartBody.FORM)
+            .addFormDataPart("uploaded-files", fileName ?: "unknown", fileBody)
+            .addFormDataPart("file_name", fileName ?: "unknown")
+            .addFormDataPart("file_extension", fileExtension ?: "unknown")
+            .addFormDataPart("challenge",Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT))
+            .addFormDataPart("signed_challenge",Base64.encodeToString(challengeString?.let { signData(it.toByteArray(Charsets.UTF_8)) }, Base64.DEFAULT))
+            .build()
 
-        queue.add(jsonObjectRequest)
+        // Create a request
+        val request = Request.Builder()
+            .url(serverUrl)
+            .post(multipartBody)
+            .addHeader("deviceid", deviceId)
+            .addHeader("deviceToken", deviceToken)
+            .build()
+
+        // Execute the request
+        client.newCall(request).enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) {
+                // Handle the error
+                //Toast.makeText(context, e.message.toString(), Toast.LENGTH_SHORT).show()
+                println("Failed to upload file: ${e.message}")
+            }
+
+            override fun onResponse(call: Call, response: Response) {
+                if (response.isSuccessful) {
+                    // Handle the successful response
+                    //Toast.makeText(context, response.message, Toast.LENGTH_SHORT).show()
+                    println("File uploaded successfully: ${response.body?.string()}")
+                } else {
+                    // Handle the unsuccessful response
+                    //Toast.makeText(context, response.message, Toast.LENGTH_SHORT).show()
+                    println("Failed to upload file: ${response.message}")
+                }
+            }
+        })
     }
     override fun onSuccess(challenge: String) {
         // Handle the challenge here
@@ -351,214 +455,3 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         }
     }
 }
-
-//    private fun signChallenge(challenge: ByteArray): ByteArray? {
-//        val keyStore = KeyStore.getInstance("AndroidKeyStore")
-//        keyStore.load(null)
-//        val privateKey = keyStore.getKey(KEY_ALIAS, null) as PrivateKey
-//
-//        val signature = Signature.getInstance("SHA256withRSA")
-//        signature.initSign(privateKey)
-//        signature.update(challenge)
-//
-//        return signature.sign()
-//    }
-//    private fun createKey() {
-//        try {
-//            val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore")
-//            keyGenerator.init(
-//                KeyGenParameterSpec.Builder(
-//                    KEY_ALIAS,
-//                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
-//                )
-//                    .setAlgorithmParameterSpec(RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4))
-//                    .setDigests(KeyProperties.DIGEST_SHA256)
-//                    .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-//                    .build()
-//            )
-//            keyGenerator.generateKey()
-//        } catch (e: Exception) {
-//            e.printStackTrace()
-//        }
-//    }
-//    private fun readFileContent(uri: Uri): ByteArray {
-//        val inputStream: InputStream? = contentResolver.openInputStream(uri)
-//        val byteArrayOutputStream = ByteArrayOutputStream()
-//        val buffer = ByteArray(1024)
-//        var length: Int
-//        if (inputStream != null) {
-//            while (inputStream.read(buffer).also { length = it } != -1) {
-//                byteArrayOutputStream.write(buffer, 0, length)
-//            }
-//        }
-//        return byteArrayOutputStream.toByteArray()
-//    }
-//    private fun pickFile() {
-//        val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
-//            type = "*/*"
-//            addCategory(Intent.CATEGORY_OPENABLE)
-//        }
-//
-//        filePickerLauncher.launch(intent)
-//    }
-//
-//
-//    private fun performDeviceAttestation() {
-//        val integrityManager: IntegrityManager = IntegrityManagerFactory.create(this)
-//
-//        val nonce = generateNonce()
-//        val request = IntegrityTokenRequest.builder()
-//            .setNonce(Base64.encodeToString(nonce, Base64.DEFAULT))
-//            .build()
-//
-//        integrityManager.requestIntegrityToken(request)
-//            .addOnCompleteListener { task ->
-//                if (task.isSuccessful) {
-//                    val tokenResponse = task.result
-//                    val integrityToken = tokenResponse.token()
-//
-//                    // Send the integrity token to your server for verification
-////                    sendTokenToServer(integrityToken)
-//                } else {
-//                    task.exception?.printStackTrace()
-//                    // Handle failure case
-//                }
-//            }
-//    }
-//
-//
-//
-////    private fun sendTokenToServer(integrityToken: String) {
-////        val client = OkHttpClient()
-////        val json = """
-////        {
-////            "token": "$integrityToken"
-////        }
-////    """.trimIndent()
-////        val body = RequestBody.create("application/json; charset=utf-8".toMediaType(), json)
-////        val request = Request.Builder()
-////            .url("https://fileveri-flask.azurewebsites.net/verify")
-////            .post(body)
-////            .build()
-////
-////        client.newCall(request).enqueue(object : Callback {
-////            override fun onFailure(call: Call, e: IOException) {
-////                e.printStackTrace()
-////            }
-////
-////            override fun onResponse(call: Call, response: Response) {
-////                response.use {
-////                    if (!response.isSuccessful) throw IOException("Unexpected code $response")
-////
-////                    val responseData = response.body()?.string()
-////                    println(responseData)
-////                }
-////            }
-////        })
-////    }
-//    private fun showFileChooser() {
-//        val intent = Intent(Intent.ACTION_GET_CONTENT)
-//        intent.type = "*/*"
-//        intent.addCategory(Intent.CATEGORY_OPENABLE)
-//        try {
-//            startActivityForResult(Intent.createChooser(intent, "Select a File"), FILE_SELECT_CODE)
-//        } catch (ex: android.content.ActivityNotFoundException) {
-//            Toast.makeText(this, "Please install a File Manager.", Toast.LENGTH_SHORT).show()
-//        }
-//    }
-//
-//
-//    private fun generateNonce(): ByteArray {
-//        val nonceData = "Sample nonce".toByteArray()
-//        // You should generate a cryptographically secure nonce for production use
-//        return nonceData
-//    }
-//    @Deprecated("This method has been deprecated in favor of using the Activity Result API\n      which brings increased type safety via an {@link ActivityResultContract} and the prebuilt\n      contracts for common intents available in\n      {@link androidx.activity.result.contract.ActivityResultContracts}, provides hooks for\n      testing, and allow receiving results in separate, testable classes independent from your\n      activity. Use\n      {@link #registerForActivityResult(ActivityResultContract, ActivityResultCallback)}\n      with the appropriate {@link ActivityResultContract} and handling the result in the\n      {@link ActivityResultCallback#onActivityResult(Object) callback}.")
-//    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-//        super.onActivityResult(requestCode, resultCode, data)
-//        if (requestCode == FILE_SELECT_CODE && resultCode == RESULT_OK) {
-//            val uri: Uri? = data?.data
-//            uri?.let {
-//                try {
-//                    val fileContent = readFileContent(it)
-//                    val signedData = signData(fileContent)
-//                    sendSignedDataToServer(fileContent, signedData)
-//                } catch (e: Exception) {
-//                    e.printStackTrace()
-//                }
-//            }
-//        }
-//    }
-//
-//
-//    private fun readFileContent(uri: Uri): ByteArray {
-//        val inputStream: InputStream? = contentResolver.openInputStream(uri)
-//        val byteArrayOutputStream = ByteArrayOutputStream()
-//        val buffer = ByteArray(1024)
-//        var length: Int
-//        if (inputStream != null) {
-//            while (inputStream.read(buffer).also { length = it } != -1) {
-//                byteArrayOutputStream.write(buffer, 0, length)
-//            }
-//        }
-//        return byteArrayOutputStream.toByteArray()
-//    }
-//
-//    private fun createKey() {
-//        try {
-//            val keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA, "AndroidKeyStore")
-//            keyGenerator.init(
-//                KeyGenParameterSpec.Builder(
-//                    KEY_ALIAS,
-//                    KeyProperties.PURPOSE_SIGN or KeyProperties.PURPOSE_VERIFY
-//                )
-//                    .setAlgorithmParameterSpec(RSAKeyGenParameterSpec(2048, RSAKeyGenParameterSpec.F4))
-//                    .setDigests(KeyProperties.DIGEST_SHA256)
-//                    .setSignaturePaddings(KeyProperties.SIGNATURE_PADDING_RSA_PKCS1)
-//                    .build()
-//            )
-//            keyGenerator.generateKey()
-//        } catch (e: Exception) {
-//            e.printStackTrace()
-//        }
-//    }
-//
-//    private fun signData(data: ByteArray): ByteArray {
-//        val signature: Signature = Signature.getInstance("SHA256withRSA")
-//        val keyStore: KeyStore = KeyStore.getInstance("AndroidKeyStore")
-//        keyStore.load(null)
-//        val privateKey: PrivateKey = keyStore.getKey(KEY_ALIAS, null) as PrivateKey
-//        signature.initSign(privateKey)
-//        signature.update(data)
-//        return signature.sign()
-//    }
-//    private fun isSecureLockScreenEnabled(): Boolean {
-//        val keyguardManager = getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
-//        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-//            keyguardManager.isDeviceSecure
-//        } else {
-//            keyguardManager.isKeyguardSecure
-//        }
-//    }
-//    private fun performDeviceAttestation() {
-//        val integrityManager: IntegrityManager = IntegrityManagerFactory.create(this)
-//
-//        val nonce = generateNonce()
-//        val request = IntegrityTokenRequest.builder()
-//            .setNonce(Base64.encodeToString(nonce, Base64.DEFAULT))
-//            .build()
-//
-//        integrityManager.requestIntegrityToken(request)
-//            .addOnCompleteListener { task ->
-//                if (task.isSuccessful) {
-//                    val tokenResponse = task.result
-//                    val integrityToken = tokenResponse.token()
-//
-//                    // Send the integrity token to your server for verification
-////                    sendTokenToServer(integrityToken)
-//                } else {
-//                    task.exception?.printStackTrace()
-//                    // Handle failure case
-//                }
-//            }
-//    }

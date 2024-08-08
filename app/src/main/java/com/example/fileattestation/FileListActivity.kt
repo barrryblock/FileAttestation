@@ -48,9 +48,9 @@ class FileListActivity : AppCompatActivity() {
     }
 
     private fun fetchFileList() {
-        val url = "https://fileveri-flask.azurewebsites.net/api/files"
-        val deviceId = "wenXku4fBwXU"
-        val deviceToken = "eQGFH02opt4DQPiu"
+        val url = "https://deviceattestation.azurewebsites.net/api/files"
+        val deviceId = "2sjYuOGkiQ9H"
+        val deviceToken = "Z7SvEGdnCcf9BobK"
 
         val jsonArrayRequest = object : JsonArrayRequest(
             Request.Method.GET, url, null,

@@ -16,11 +16,8 @@ import androidx.activity.result.ActivityResult
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import com.android.volley.DefaultRetryPolicy
 import com.android.volley.RequestQueue
-import com.android.volley.RetryPolicy
 import com.android.volley.toolbox.JsonObjectRequest
-import com.android.volley.toolbox.StringRequest
 import com.android.volley.toolbox.Volley
 import okhttp3.Call
 import okhttp3.Callback
@@ -36,20 +33,15 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
-import java.io.OutputStreamWriter
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.KeyStore
 import java.security.PrivateKey
 import java.security.PublicKey
-import java.security.SecureRandom
 import java.security.Signature
 import java.util.Calendar
 import java.util.GregorianCalendar
-import javax.crypto.Cipher
-import javax.crypto.KeyGenerator
-import javax.crypto.SecretKey
-import javax.crypto.spec.GCMParameterSpec
+
 
 
 interface ChallengeCallback {
@@ -75,6 +67,7 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         const val KEY_ALIAS = "com.android.security.deviceattestation.key"
         const val DEVICE_ID = "2sjYuOGkiQ9H"
         const val DEVICE_TOKEN = "Z7SvEGdnCcf9BobK"
+        const val SERVER_URL = "https://deviceattestation.azurewebsites.net/api/upload-file"
     }
     private fun showFileChooser() {
         val intent = Intent(Intent.ACTION_GET_CONTENT).apply {
@@ -114,7 +107,7 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
             setCertificateNotAfter(endDate.time)                            //End of the validity period for the self-signed certificate of the generated key, default Jan 1 2048
             setUserAuthenticationRequired(false)                             //Sets whether this key is authorized to be used only if the user has been authenticated, default false
             setKeySize(2048)
-            setIsStrongBoxBacked(false)
+            setIsStrongBoxBacked(true)
             build()
         }
 
@@ -135,11 +128,11 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         return keyStore.getCertificate(KEY_ALIAS).publicKey
     }
 
-    private fun getPrivateKey(): PrivateKey {
-        val keyStore = KeyStore.getInstance("AndroidKeyStore")
-        keyStore.load(null)
-        return keyStore.getKey(KEY_ALIAS, null) as PrivateKey
-    }
+//    private fun getPrivateKey(): PrivateKey {
+//        val keyStore = KeyStore.getInstance("AndroidKeyStore")
+//        keyStore.load(null)
+//        return keyStore.getKey(KEY_ALIAS, null) as PrivateKey
+//    }
     private fun sendPublicKeyToServer(publicKey: PublicKey) {
         val url = "https://deviceattestation.azurewebsites.net/attest-device"
         val deviceId = DEVICE_ID
@@ -153,7 +146,7 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
 
         val jsonObjectRequest = object : JsonObjectRequest(
             Method.POST, url, jsonObject,
-            { response ->
+            { _ ->
                 Toast.makeText(this, "Public key sent to server", Toast.LENGTH_SHORT).show()
             },
             { error ->
@@ -201,7 +194,7 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
                 //sendSignedDataToServer(fileContent!!, keyPair.public , signedData!!)
                 println(formatBase64String(getPublicKey().toString()))
                 //sendSignedDataToServer(this, fileContent!!, getPublicKey(),challengeString)
-                uploadByteArrayToFlaskServer(fileContent!!,"https://deviceattestation.azurewebsites.net/api/upload-file",this)
+                uploadByteArrayToFlaskServer(fileContent!!,this)
 
             } else {
                 Toast.makeText(this, "No file selected", Toast.LENGTH_SHORT).show()
@@ -308,20 +301,20 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
             null
         }
     }
-    private fun encryptFileContent(fileContent: ByteArray, secretKey: SecretKey): ByteArray {
-        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-        val iv = ByteArray(12) // GCM standard IV length
-        SecureRandom().nextBytes(iv)
-        val gcmSpec = GCMParameterSpec(128, iv)
-        cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec)
-        val encryptedContent = cipher.doFinal(fileContent)
-        return iv + encryptedContent // Concatenate IV and encrypted content
-    }
-    private fun generateSecretKey(): SecretKey {
-        val keyGenerator = KeyGenerator.getInstance("AES")
-        keyGenerator.init(256) // AES-256
-        return keyGenerator.generateKey()
-    }
+//    private fun encryptFileContent(fileContent: ByteArray, secretKey: SecretKey): ByteArray {
+//        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+//        val iv = ByteArray(12) // GCM standard IV length
+//        SecureRandom().nextBytes(iv)
+//        val gcmSpec = GCMParameterSpec(128, iv)
+//        cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec)
+//        val encryptedContent = cipher.doFinal(fileContent)
+//        return iv + encryptedContent // Concatenate IV and encrypted content
+//    }
+//    private fun generateSecretKey(): SecretKey {
+//        val keyGenerator = KeyGenerator.getInstance("AES")
+//        keyGenerator.init(256) // AES-256
+//        return keyGenerator.generateKey()
+//    }
 //    private fun sendSignedDataToServer(context: Context,fileContent: ByteArray,publicKey: PublicKey,challengeString: String?) {
 //        val url = "https://deviceattestation.azurewebsites.net/upload"
 //        val deviceId = DEVICE_ID
@@ -368,11 +361,12 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
 //        queue.add(jsonObjectRequest)
 //    }
 
-    private fun uploadByteArrayToFlaskServer(fileContent: ByteArray, serverUrl: String, context: Context) {
+    private fun uploadByteArrayToFlaskServer(fileContent: ByteArray, context: Context) {
         // Create OkHttpClient instance
         val client = OkHttpClient()
         val deviceId = DEVICE_ID
         val deviceToken = DEVICE_TOKEN
+        val serverUrl = SERVER_URL
         //println(Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT))
         //println(Base64.encodeToString(challengeString?.let { signData(it.toByteArray(Charsets.UTF_8)) }, Base64.DEFAULT))
         // Create a temporary file from the ByteArray
@@ -439,19 +433,19 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         }
         return sb.toString()
     }
-    private fun writeParamsToFile(context: Context, params: Map<String, String>) {
-        val fileName = "request_params.txt"
-        val file = File(context.filesDir, fileName)
-        println(file.absolutePath)
-
-        FileOutputStream(file).use { fos ->
-            OutputStreamWriter(fos).use { writer ->
-                writer.write("Params:\n")
-                for ((key, value) in params) {
-                    writer.write("$key: $value\n")
-                }
-
-            }
-        }
-    }
+//    private fun writeParamsToFile(context: Context, params: Map<String, String>) {
+//        val fileName = "request_params.txt"
+//        val file = File(context.filesDir, fileName)
+//        println(file.absolutePath)
+//
+//        FileOutputStream(file).use { fos ->
+//            OutputStreamWriter(fos).use { writer ->
+//                writer.write("Params:\n")
+//                for ((key, value) in params) {
+//                    writer.write("$key: $value\n")
+//                }
+//
+//            }
+//        }
+//    }
 }

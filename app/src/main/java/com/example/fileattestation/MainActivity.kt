@@ -301,65 +301,6 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
             null
         }
     }
-//    private fun encryptFileContent(fileContent: ByteArray, secretKey: SecretKey): ByteArray {
-//        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
-//        val iv = ByteArray(12) // GCM standard IV length
-//        SecureRandom().nextBytes(iv)
-//        val gcmSpec = GCMParameterSpec(128, iv)
-//        cipher.init(Cipher.ENCRYPT_MODE, secretKey, gcmSpec)
-//        val encryptedContent = cipher.doFinal(fileContent)
-//        return iv + encryptedContent // Concatenate IV and encrypted content
-//    }
-//    private fun generateSecretKey(): SecretKey {
-//        val keyGenerator = KeyGenerator.getInstance("AES")
-//        keyGenerator.init(256) // AES-256
-//        return keyGenerator.generateKey()
-//    }
-//    private fun sendSignedDataToServer(context: Context,fileContent: ByteArray,publicKey: PublicKey,challengeString: String?) {
-//        val url = "https://deviceattestation.azurewebsites.net/upload"
-//        val deviceId = DEVICE_ID
-//        val deviceToken = DEVICE_TOKEN
-//        val encodedPublicKey = Base64.encodeToString(publicKey.encoded, Base64.DEFAULT).replace("\n", "")
-//        val publicKeyString = "-----BEGIN PUBLIC KEY-----\n${formatBase64String(encodedPublicKey)}-----END PUBLIC KEY-----"
-//        val jsonObjectRequest = object : StringRequest(
-//            Method.POST, url,
-//            { response ->
-//
-//                uploadByteArrayToFlaskServer(fileContent,"https://deviceattestation.azurewebsites.net/upload-files",this)
-//                Toast.makeText(context, response.toString(), Toast.LENGTH_SHORT).show()
-//            },
-//            { error ->
-//                // Handle error
-//                val responseBody = error.networkResponse?.data?.let { String(it, Charsets.UTF_8) }
-//                Toast.makeText(context, "Error: $responseBody", Toast.LENGTH_SHORT).show()
-//                println("UploadError: ${error.toString()}")
-//                println("UploadError: $responseBody")
-//            }){
-//            override fun getHeaders(): Map<String, String> {
-//                val headers = HashMap<String, String>()
-//                headers["deviceid"] = deviceId
-//                headers["deviceToken"] = deviceToken
-//                return headers
-//            }
-//            override fun getParams(): Map<String, String> {
-//                val params = HashMap<String, String>()
-//                params["signed_challenge"] = Base64.encodeToString(challengeString?.let { signData(it.toByteArray(Charsets.UTF_8)) }, Base64.DEFAULT)
-//                params["public_key"] = publicKeyString
-//                params["challenge"] = Base64.encodeToString(challengeString?.toByteArray(Charsets.UTF_8) , Base64.DEFAULT)
-//                writeParamsToFile(context,params)
-//                return params
-//            }
-//            override fun getRetryPolicy(): RetryPolicy {
-//                return DefaultRetryPolicy(
-//                    120000, // 2 minutes timeout
-//                    DefaultRetryPolicy.DEFAULT_MAX_RETRIES,
-//                    DefaultRetryPolicy.DEFAULT_BACKOFF_MULT
-//                )
-//            }
-//        }
-//
-//        queue.add(jsonObjectRequest)
-//    }
 
     private fun uploadByteArrayToFlaskServer(fileContent: ByteArray, context: Context) {
         // Create OkHttpClient instance
@@ -433,19 +374,5 @@ class MainActivity : AppCompatActivity(), ChallengeCallback {
         }
         return sb.toString()
     }
-//    private fun writeParamsToFile(context: Context, params: Map<String, String>) {
-//        val fileName = "request_params.txt"
-//        val file = File(context.filesDir, fileName)
-//        println(file.absolutePath)
-//
-//        FileOutputStream(file).use { fos ->
-//            OutputStreamWriter(fos).use { writer ->
-//                writer.write("Params:\n")
-//                for ((key, value) in params) {
-//                    writer.write("$key: $value\n")
-//                }
-//
-//            }
-//        }
-//    }
+
 }

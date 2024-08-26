@@ -53,7 +53,7 @@ class FileListActivity : AppCompatActivity() {
         val deviceToken = "Z7SvEGdnCcf9BobK"
 
         val jsonArrayRequest = object : JsonArrayRequest(
-            Request.Method.GET, url, null,
+            Method.GET, url, null,
             { response ->
                 try {
                     val fileList = ArrayList<String>()
